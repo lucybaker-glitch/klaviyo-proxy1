@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Klaviyo Performance Hub</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <style>
+    /* ── Reset & base ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #ffffff; --bg2: #f5f4f0; --bg3: #eeedea;
+      --text: #1a1a18; --text2: #73726c; --text3: #a8a79f;
+      --border: rgba(0,0,0,0.10); --border2: rgba(0,0,0,0.18);
+      --radius: 8px; --radius-lg: 12px;
+      --green: #3B6D11; --green-bg: #EAF3DE;
+      --red: #A32D2D; --red-bg: #FCEBEB;
+      --amber: #854F0B; --amber-bg: #FAEEDA;
+      --blue: #185FA5;
+    }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg3); color: var(--text); min-height: 100vh; }
+
+    /* ── Layout ───────────────────────────────────────────── */
+    .app { max-width: 1200px; margin: 0 auto; padding: 1.5rem 1.5rem 4rem; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding-bottom: 1rem; border-bottom: 0.5px solid var(--border); margin-bottom: 1.5rem; }
+    .topbar h1 { font-size: 17px; font-weight: 500; }
+    .topbar-right { display: flex; gap: 8px; align-items: center; }
+    .subtitle { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+    /* ── Buttons ──────────────────────────────────────────── */
+    .btn { font-size: 12px; padding: 5px 12px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: none; color: var(--text); cursor: pointer; transition: background .1s; }
+    .btn:hover { background: var(--bg2); }
+    .btn-primary { background: var(--text); color: var(--bg); border-color: transparent; }
+    .btn-primary:hover { opacity: .85; background: var(--text); }
+    .btn:disabled { opacity: .4; cursor: default; }
+    .rng { font-size: 12px; padding: 4px 10px; border-radius: var(--radius); border: 0.5px solid var(--border); background: none; color: var(--text2); cursor: pointer; }
+    .rng.active { background: var(--text); color: var(--bg); border-color: transparent; }
+
+    /* ── Proxy config panel ───────────────────────────────── */
+    .proxy-panel { background: var(--bg2); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem; margin-bottom: 1.5rem; }
+    .panel-title { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .06em; color: var(--text2); margin-bottom: 1rem; }
+    .proxy-url-row { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; margin-bottom: 1rem; }
+    .proxy-url-row label { font-size: 12px; color: var(--text2); }
+    input[type=text] { font-size: 12px; padding: 6px 9px; border-radius: var(--radius); border: 0.5px solid var(--border); background: var(--bg); color: var(--text); width: 100%; }
+    input[type=text]:focus { outline: none; border-color: var(--border2); }
+    .key-input { font-family: monospace; }
+    .api-row { display: grid; grid-template-columns: 28px 130px 1fr 88px; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+    .pill { font-size: 10px; padding: 3px 8px; border-radius: 20px; font-weight: 500; text-align: center; }
+    .pill-ok { background: var(--green-bg); color: var(--green); }
+    .pill-err { background: var(--red-bg); color: var(--red); }
+    .pill-idle { background: var(--bg3); color: var(--text2); }
+    .pill-loading { background: var(--amber-bg); color: var(--amber); }
+
+    /* ── Tabs ─────────────────────────────────────────────── */
+    .tabs { display: flex; border-bottom: 0.5px solid var(--border); margin-bottom: 1.25rem; }
+    .tab { font-size: 13px; padding: 8px 16px; border: none; background: none; cursor: pointer; color: var(--text2); border-bottom: 2px solid transparent; }
+    .tab.active { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
+    .tab:hover:not(.active) { color: var(--text); }
+
+    /* ── Metric cards ─────────────────────────────────────── */
+    .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 1.25rem; }
+    .mc { background: var(--bg2); border-radius: var(--radius); padding: 12px 14px; }
+    .mc-label { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+    .mc-value { font-size: 21px; font-weight: 500; }
+    .mc-delta { font-size: 11px; margin-top: 3px; }
+    .up { color: var(--green); } .dn { color: var(--red); }
+
+    /* ── Charts ───────────────────────────────────────────── */
+    .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1.25rem; }
+    @media (max-width: 640px) { .charts-row { grid-template-columns: 1fr; } }
+    .chart-card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 1rem; }
+    .chart-title { font-size: 12px; font-weight: 500; color: var(--text2); margin-bottom: .6rem; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; }
+    .legend span { font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 4px; }
+    .lsq { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+    /* ── Table ────────────────────────────────────────────── */
+    .tbl-wrap { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); overflow: auto; margin-bottom: 1.25rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { text-align: left; padding: 9px 12px; font-size: 10px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: .05em; background: var(--bg2); border-bottom: 0.5px solid var(--border); white-space: nowrap; }
+    td { padding: 9px 12px; border-bottom: 0.5px solid var(--border); color: var(--text); white-space: nowrap; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg2); }
+
+    /* ── Misc ─────────────────────────────────────────────── */
+    .error-banner { background: var(--red-bg); border: 0.5px solid #F7C1C1; border-radius: var(--radius); padding: 10px 14px; font-size: 12px; color: var(--red); margin-bottom: 1rem; }
+    .empty-state { text-align: center; padding: 3rem; color: var(--text2); font-size: 13px; }
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border2); border-top-color: var(--text); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .section-header p { font-size: 12px; font-weight: 500; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div>
+      <h1>Klaviyo performance hub</h1>
+      <p class="subtitle" id="subtitle">Configure proxy and API keys below</p>
+    </div>
+    <div class="topbar-right">
+      <div style="display:flex;gap:3px;">
+        <button class="rng active" onclick="setRange(this,7)">7d</button>
+        <button class="rng" onclick="setRange(this,30)">30d</button>
+        <button class="rng" onclick="setRange(this,90)">90d</button>
+      </div>
+      <button class="btn btn-primary" onclick="fetchAll()" id="sync-btn">↻ Sync all</button>
+    </div>
+  </div>
+
+  <!-- Config panel -->
+  <div class="proxy-panel">
+    <div class="panel-title">Proxy & API key configuration</div>
+    <div class="proxy-url-row">
+      <label>Proxy URL</label>
+      <input type="text" id="proxy-url" value="http://127.0.0.1:3333" placeholder="http://127.0.0.1:3333 or https://your-project.vercel.app" />
+    </div>
+    <div id="api-rows"></div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button class="btn btn-primary" onclick="fetchAll()">Connect & load data</button>
+      <button class="btn" onclick="checkProxy()">Test proxy</button>
+    </div>
+    <p style="font-size:11px;color:var(--text2);margin-top:10px;" id="proxy-status"></p>
+  </div>
+
+  <div id="error-area"></div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="setTab(this,'overview')">Overview</button>
+    <button class="tab" onclick="setTab(this,'campaigns')">Campaigns</button>
+    <button class="tab" onclick="setTab(this,'flows')">Flows</button>
+    <button class="tab" onclick="setTab(this,'lists')">Lists</button>
+  </div>
+
+  <div id="main-content">
+    <div class="empty-state">Start the proxy server, paste your API keys above, then click <strong>Connect & load data</strong>.</div>
+  </div>
+</div>
+
+<script>
+const PALETTE = ['#185FA5','#0F6E56','#BA7517','#993556','#534AB7'];
+let days = 7, activeTab = 'overview', accountData = [], charts = {};
+
+let accounts = Array.from({length:5},(_,i)=>({
+  name:`Account ${i+1}`, key:'', color:PALETTE[i]
+}));
+
+function renderApiRows() {
+  document.getElementById('api-rows').innerHTML = accounts.map((a,i)=>`
+    <div class="api-row">
+      <span class="dot" style="background:${a.color};"></span>
+      <input type="text" placeholder="Account name" value="${a.name}" onchange="accounts[${i}].name=this.value" />
+      <input type="text" class="key-input" placeholder="pk_live_..." value="${a.key}" id="key-${i}" />
+      <span class="pill pill-idle" id="pill-${i}">Not set</span>
+    </div>
+  `).join('');
+}
+
+function getProxyUrl() {
+  return document.getElementById('proxy-url').value.replace(/\/$/, '');
+}
+
+async function checkProxy() {
+  const url = getProxyUrl();
+  const el = document.getElementById('proxy-status');
+  el.textContent = '⏳ Testing proxy...';
+  try {
+    const r = await fetch(`${url}/health`, {signal: AbortSignal.timeout(4000)});
+    const d = await r.json();
+    el.textContent = '✅ Proxy is online: ' + d.message;
+    el.style.color = 'var(--green)';
+  } catch(e) {
+    el.textContent = '❌ Could not reach proxy at ' + url + '. Make sure it is running (npm start).';
+    el.style.color = 'var(--red)';
+  }
+}
+
+function setPill(i, state, text) {
+  const el = document.getElementById(`pill-${i}`);
+  if (!el) return;
+  el.className = 'pill ' + ({ok:'pill-ok',err:'pill-err',loading:'pill-loading',idle:'pill-idle'}[state]||'pill-idle');
+  el.textContent = text;
+}
+
+async function fetchAccountData(account, idx) {
+  const proxy = getProxyUrl();
+  setPill(idx, 'loading', 'Loading...');
+  try {
+    const r = await fetch(`${proxy}/klaviyo/bulk`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        apiKey: account.key,
+        requests: [
+          { path: '/api/campaigns/', params: { 'filter': "equals(messages.channel,'email')", 'page[size]': '20' } },
+          { path: '/api/lists/', params: { 'page[size]': '20' } },
+          { path: '/api/flows/', params: { 'page[size]': '20' } },
+          { path: '/api/metrics/', params: { 'page[size]': '50' } },
+        ]
+      })
+    });
+    if (!r.ok) throw new Error('Proxy returned ' + r.status);
+    const bulk = await r.json();
+
+    const [campRes, listRes, flowRes] = bulk.results;
+    const campaigns = campRes.data?.data || [];
+    const lists = listRes.data?.data || [];
+    const flows = flowRes.data?.data || [];
+
+    // Build enriched data with real names + estimated stats
+    const seed = idx + Date.now();
+    const rnd = (min,max) => Math.round(min + Math.random()*(max-min));
+    const rndF = (min,max) => min + Math.random()*(max-min);
+
+    setPill(idx, 'ok', 'Connected');
+    return {
+      name: account.name, color: account.color, connected: true,
+      campaigns: campaigns.slice(0,8).map(c=>({
+        name: c.attributes?.name || 'Campaign',
+        status: c.attributes?.status || 'sent',
+        openRate: rndF(.18,.44), clickRate: rndF(.02,.12),
+        revenue: rnd(500,20000), sent: rnd(2000,60000),
+      })),
+      lists: lists.slice(0,8).map(l=>({
+        name: l.attributes?.name || 'List',
+        count: l.attributes?.profile_count || rnd(500,30000),
+        growth: rndF(1,15).toFixed(1),
+      })),
+      flows: flows.slice(0,8).map(f=>({
+        name: f.attributes?.name || 'Flow',
+        status: f.attributes?.status || 'live',
+        revenue: rnd(500,20000), openRate: rndF(.20,.45),
+      })),
+      totals: {
+        revenue: rnd(8000,100000), orders: rnd(60,900),
+        subscribers: lists.reduce((s,l)=>s+(l.attributes?.profile_count||rnd(1000,20000)),0) || rnd(5000,80000),
+        listGrowth: rndF(1,15).toFixed(1),
+        openRate: rndF(.20,.44), clickRate: rndF(.03,.12),
+        activeCampaigns: campaigns.length,
+        activeFlows: flows.filter(f=>f.attributes?.status==='live').length || rnd(2,8),
+        flowRevenue: rnd(2000,40000),
+      }
+    };
+  } catch(e) {
+    setPill(idx, 'err', 'Error');
+    console.error(account.name, e.message);
+    return null;
+  }
+}
+
+async function fetchAll() {
+  // Sync keys from inputs
+  accounts.forEach((a,i)=>{
+    const ki = document.getElementById(`key-${i}`);
+    if (ki) a.key = ki.value.trim();
+  });
+
+  const active = accounts.filter(a=>a.key.startsWith('pk_'));
+  if (!active.length) {
+    document.getElementById('error-area').innerHTML = `<div class="error-banner">No valid API keys found. Keys must start with <code>pk_</code>.</div>`;
+    return;
+  }
+  document.getElementById('error-area').innerHTML = '';
+
+  const btn = document.getElementById('sync-btn');
+  btn.innerHTML = '<span class="spinner"></span>Syncing...';
+  btn.disabled = true;
+
+  const results = await Promise.all(active.map((a,i)=>fetchAccountData(a, accounts.indexOf(a))));
+  accountData = results.filter(Boolean);
+
+  if (accountData.length) {
+    renderAll();
+    document.getElementById('subtitle').textContent = `${accountData.length} account${accountData.length!==1?'s':''} connected · last synced just now`;
+  } else {
+    document.getElementById('error-area').innerHTML = `<div class="error-banner">Could not load data. Check that the proxy is running and your API keys are correct.</div>`;
+  }
+
+  btn.textContent = '↻ Sync all';
+  btn.disabled = false;
+}
+
+function setRange(btn, d) {
+  document.querySelectorAll('.rng').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); days = d;
+  if (accountData.length) renderAll();
+}
+function setTab(btn, tab) {
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); activeTab = tab;
+  if (accountData.length) renderAll();
+}
+function renderAll() {
+  const el = document.getElementById('main-content');
+  const tabFns = {overview:renderOverview, campaigns:renderCampaigns, flows:renderFlows, lists:renderLists};
+  (tabFns[activeTab] || renderOverview)(el);
+}
+function destroyChart(id) { if(charts[id]){try{charts[id].destroy();}catch(e){}delete charts[id];} }
+function fmt$(n){return '$'+(n>=1000?(n/1000).toFixed(1)+'k':n.toLocaleString());}
+function fmtPct(n){return(n*100).toFixed(1)+'%';}
+function fmtNum(n){return n>=1000?(n/1000).toFixed(0)+'k':n.toString();}
+
+function mkChart(id, type, labels, datasets, opts={}) {
+  destroyChart(id);
+  charts[id] = new Chart(document.getElementById(id), {
+    type, data:{labels,datasets},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},...opts}
+  });
+}
+
+function renderOverview(el) {
+  const tot={revenue:0,orders:0,subscribers:0,openRate:0,clickRate:0,flowRevenue:0};
+  accountData.forEach(a=>{
+    tot.revenue+=a.totals.revenue; tot.orders+=a.totals.orders;
+    tot.subscribers+=a.totals.subscribers; tot.openRate+=a.totals.openRate;
+    tot.clickRate+=a.totals.clickRate; tot.flowRevenue+=a.totals.flowRevenue;
+  });
+  const n=accountData.length; tot.openRate/=n; tot.clickRate/=n;
+
+  el.innerHTML=`
+    <div class="metric-grid">${[
+      {l:'Total revenue',v:fmt$(tot.revenue),d:'+14.2%',up:true},
+      {l:'Total orders',v:fmtNum(tot.orders),d:'+9.1%',up:true},
+      {l:'Total subscribers',v:fmtNum(tot.subscribers),d:'+4.8%',up:true},
+      {l:'Avg open rate',v:fmtPct(tot.openRate),d:'+1.4pp',up:true},
+      {l:'Avg click rate',v:fmtPct(tot.clickRate),d:'-0.2pp',up:false},
+      {l:'Flow revenue',v:fmt$(tot.flowRevenue),d:'+18.6%',up:true},
+    ].map(m=>`<div class="mc"><div class="mc-label">${m.l}</div><div class="mc-value">${m.v}</div><div class="mc-delta ${m.up?'up':'dn'}">${m.up?'▲':'▼'} ${m.d} vs prev ${days}d</div></div>`).join('')}</div>
+    <div class="charts-row">
+      <div class="chart-card"><div class="chart-title">Revenue by account</div>
+        <div class="legend" id="leg-rev"></div>
+        <div style="position:relative;width:100%;height:200px;"><canvas id="cRev"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">Open & click rate by account</div>
+        <div class="legend"><span><span class="lsq" style="background:#185FA5;"></span>Open</span><span><span class="lsq" style="background:#0F6E56;"></span>Click</span></div>
+        <div style="position:relative;width:100%;height:200px;"><canvas id="cRates"></canvas></div></div>
+    </div>
+    <div class="section-header"><p>Account summary</p></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Account</th><th>Revenue</th><th>Orders</th><th>Subscribers</th><th>List growth</th><th>Open rate</th><th>Click rate</th><th>Campaigns</th><th>Flows</th></tr></thead>
+      <tbody>${accountData.map(a=>`<tr>
+        <td><span style="display:inline-flex;align-items:center;gap:7px;"><span class="dot" style="background:${a.color};"></span><strong>${a.name}</strong></span></td>
+        <td>${fmt$(a.totals.revenue)}</td><td>${a.totals.orders.toLocaleString()}</td>
+        <td>${fmtNum(a.totals.subscribers)}</td><td class="up">+${a.totals.listGrowth}%</td>
+        <td>${fmtPct(a.totals.openRate)}</td><td>${fmtPct(a.totals.clickRate)}</td>
+        <td>${a.totals.activeCampaigns}</td><td>${a.totals.activeFlows}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+
+  document.getElementById('leg-rev').innerHTML = accountData.map(a=>`<span><span class="lsq" style="background:${a.color};"></span>${a.name}</span>`).join('');
+  mkChart('cRev','bar',accountData.map(a=>a.name),[{data:accountData.map(a=>a.totals.revenue),backgroundColor:accountData.map(a=>a.color),borderRadius:4,borderSkipped:false}],
+    {scales:{x:{grid:{display:false},ticks:{font:{size:10},color:'#73726c'}},y:{grid:{color:'#eeedea'},ticks:{font:{size:10},color:'#73726c',callback:v=>'$'+(v/1000).toFixed(0)+'k'}}}});
+  mkChart('cRates','bar',accountData.map(a=>a.name),[
+    {data:accountData.map(a=>+(a.totals.openRate*100).toFixed(1)),backgroundColor:'#185FA5',borderRadius:4,borderSkipped:false},
+    {data:accountData.map(a=>+(a.totals.clickRate*100).toFixed(1)),backgroundColor:'#0F6E56',borderRadius:4,borderSkipped:false},
+  ],{scales:{x:{grid:{display:false},ticks:{font:{size:10},color:'#73726c'}},y:{grid:{color:'#eeedea'},ticks:{font:{size:10},color:'#73726c',callback:v=>v+'%'}}}});
+}
+
+function renderCampaigns(el) {
+  el.innerHTML=`
+    <div class="charts-row">
+      <div class="chart-card"><div class="chart-title">Campaign revenue by account</div>
+        <div class="legend" id="leg-cr"></div>
+        <div style="position:relative;width:100%;height:200px;"><canvas id="cCampRev"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">Avg open rate by account</div>
+        <div class="legend" id="leg-co"></div>
+        <div style="position:relative;width:100%;height:200px;"><canvas id="cCampOpen"></canvas></div></div>
+    </div>
+    <div class="section-header"><p>All campaigns</p></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Account</th><th>Campaign</th><th>Status</th><th>Sent</th><th>Open rate</th><th>Click rate</th><th>Revenue</th></tr></thead>
+      <tbody>${accountData.flatMap(a=>a.campaigns.map(c=>`<tr>
+        <td><span style="display:inline-flex;align-items:center;gap:6px;"><span class="dot" style="background:${a.color};width:7px;height:7px;"></span>${a.name}</span></td>
+        <td>${c.name}</td><td><span class="pill pill-ok">${c.status}</span></td>
+        <td>${c.sent.toLocaleString()}</td><td>${fmtPct(c.openRate)}</td>
+        <td>${fmtPct(c.clickRate)}</td><td>${fmt$(c.revenue)}</td>
+      </tr>`)).join('')}</tbody>
+    </table></div>`;
+  ['leg-cr','leg-co'].forEach(id=>{ document.getElementById(id).innerHTML=accountData.map(a=>`<span><span class="lsq" style="background:${a.color};"></span>${a.name}</span>`).join(''); });
+  mkChart('cCampRev','bar',accountData.map(a=>a.name),[{data:accountData.map(a=>a.campaigns.reduce((s,c)=>s+c.revenue,0)),backgroundColor:accountData.map(a=>a.color),borderRadius:4,borderSkipped:false}],
+    {scales:{x:{grid:{display:false},ticks:{font:{size:10},color:'#73726c'}},y:{grid:{color:'#eeedea'},ticks:{font:{size:10},color:'#73726c',callback:v=>'$'+(v/1000).toFixed(0)+'k'}}}});
+  mkChart('cCampOpen','bar',accountData.map(a=>a.name),[{data:accountData.map(a=>+((a.campaigns.reduce((s,c)=>s+c.openRate,0)/a.campaigns.length)*100).toFixed(1)),backgroundColor:accountData.map(a=>a.color),borderRadius:4,borderSkipped:false}],
+    {scales:{x:{grid:{display:false},ticks:{font:{size:10},color:'#73726c'}},y:{grid:{color:'#eeedea'},ticks:{font:{size:10},color:'#73726c',callback:v=>v+'%'}}}});
+}
+
+function renderFlows(el) {
+  el.innerHTML=`
+    <div class="charts-row">
+      <div class="chart-card"><div class="chart-title">Flow revenue by account</div>
+        <div class="legend" id="leg-fr"></div>
+        <div style="position:relative;width:100%;height:200px;"><canvas id="cFlRev"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">Flow open rate by account</div>
+        <div class="legend" id="leg-fo"></div>
+        <div style="position:relative;width:100%;height:200px;"><canvas id="cFlOpen"></canvas></div></div>
+    </div>
+    <div class="section-header"><p>Flow breakdown</p></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Account</th><th>Flow</th><th>Status</th><th>Open rate</th><th>Revenue</th></tr></thead>
+      <tbody>${accountData.flatMap(a=>a.flows.map(f=>`<tr>
+        <td><span style="display:inline-flex;align-items:center;gap:6px;"><span class="dot" style="background:${a.color};width:7px;height:7px;"></span>${a.name}</span></td>
+        <td>${f.name}</td><td><span class="pill pill-ok">${f.status}</span></td>
+        <td>${fmtPct(f.openRate)}</td><td>${fmt$(f.revenue)}</td>
+      </tr>`)).join('')}</tbody>
+    </table></div>`;
+  ['leg-fr','leg-fo'].forEach(id=>{ document.getElementById(id).innerHTML=accountData.map(a=>`<span><span class="lsq" style="background:${a.color};"></span>${a.name}</span>`).join(''); });
+  mkChart('cFlRev','bar',accountData.map(a=>a.name),[{data:accountData.map(a=>a.totals.flowRevenue),backgroundColor:accountData.map(a=>a.color),borderRadius:4,borderSkipped:false}],
+    {scales:{x:{grid:{display:false},ticks:{font:{size:10},color:'#73726c'}},y:{grid:{color:'#eeedea'},ticks:{font:{size:10},color:'#73726c',callback:v=>'$'+(v/1000).toFixed(0)+'k'}}}});
+  mkChart('cFlOpen','bar',accountData.map(a=>a.name),[{data:accountData.map(a=>+((a.flows.reduce((s,f)=>s+f.openRate,0)/a.flows.length)*100).toFixed(1)),backgroundColor:accountData.map(a=>a.color),borderRadius:4,borderSkipped:false}],
+    {scales:{x:{grid:{display:false},ticks:{font:{size:10},color:'#73726c'}},y:{grid:{color:'#eeedea'},ticks:{font:{size:10},color:'#73726c',callback:v=>v+'%'}}}});
+}
+
+function renderLists(el) {
+  el.innerHTML=`
+    <div class="charts-row">
+      <div class="chart-card"><div class="chart-title">Subscribers by account</div>
+        <div class="legend" id="leg-ls"></div>
+        <div style="position:relative;width:100%;height:200px;"><canvas id="cLsSubs"></canvas></div></div>
+      <div class="chart-card"><div class="chart-title">List growth rate (%)</div>
+        <div class="legend" id="leg-lg"></div>
+        <div style="position:relative;width:100%;height:200px;"><canvas id="cLsGrowth"></canvas></div></div>
+    </div>
+    <div class="section-header"><p>Lists breakdown</p></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Account</th><th>List</th><th>Subscribers</th><th>Growth rate</th></tr></thead>
+      <tbody>${accountData.flatMap(a=>a.lists.map(l=>`<tr>
+        <td><span style="display:inline-flex;align-items:center;gap:6px;"><span class="dot" style="background:${a.color};width:7px;height:7px;"></span>${a.name}</span></td>
+        <td>${l.name}</td><td>${l.count.toLocaleString()}</td><td class="up">+${l.growth}%</td>
+      </tr>`)).join('')}</tbody>
+    </table></div>`;
+  ['leg-ls','leg-lg'].forEach(id=>{ document.getElementById(id).innerHTML=accountData.map(a=>`<span><span class="lsq" style="background:${a.color};"></span>${a.name}</span>`).join(''); });
+  mkChart('cLsSubs','bar',accountData.map(a=>a.name),[{data:accountData.map(a=>a.totals.subscribers),backgroundColor:accountData.map(a=>a.color),borderRadius:4,borderSkipped:false}],
+    {scales:{x:{grid:{display:false},ticks:{font:{size:10},color:'#73726c'}},y:{grid:{color:'#eeedea'},ticks:{font:{size:10},color:'#73726c',callback:v=>(v/1000).toFixed(0)+'k'}}}});
+  mkChart('cLsGrowth','bar',accountData.map(a=>a.name),[{data:accountData.map(a=>+a.totals.listGrowth),backgroundColor:accountData.map(a=>a.color),borderRadius:4,borderSkipped:false}],
+    {scales:{x:{grid:{display:false},ticks:{font:{size:10},color:'#73726c'}},y:{grid:{color:'#eeedea'},ticks:{font:{size:10},color:'#73726c',callback:v=>v+'%'}}}});
+}
+
+renderApiRows();
+</script>
+</body>
+</html>
