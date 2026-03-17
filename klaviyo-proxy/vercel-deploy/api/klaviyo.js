@@ -1,30 +1,31 @@
-/**
- * Vercel Serverless Function — Klaviyo Proxy
- * Deploy to Vercel for a hosted proxy (free tier works fine)
- * 
- * After deploying, update PROXY_URL in your dashboard to:
- * https://your-project.vercel.app/api/klaviyo
- */
-
 export default async function handler(req, res) {
-  // CORS headers — update the origin to your Claude.ai or hosted dashboard URL
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, x-klaviyo-key"
-  );
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-klaviyo-key");
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
-  // Bulk endpoint
-  if (req.method === "POST" && req.url.includes("/bulk")) {
-    const { apiKey, requests } = req.body;
+  // Bulk endpoint — all POST requests
+  if (req.method === "POST") {
+    let body = req.body;
 
-    if (!apiKey?.startsWith("pk_")) {
-      return res.status(400).json({ error: "Invalid Klaviyo API key" });
+    // Parse body if it's a string (some Vercel configs don't auto-parse)
+    if (typeof body === "string") {
+      try { body = JSON.parse(body); } catch(e) {
+        return res.status(400).json({ error: "Invalid JSON body" });
+      }
+    }
+
+    const { apiKey, requests } = body || {};
+
+    if (!apiKey || !apiKey.startsWith("pk_")) {
+      return res.status(400).json({ error: "Invalid Klaviyo API key — must start with pk_" });
+    }
+
+    if (!Array.isArray(requests) || requests.length === 0) {
+      return res.status(200).json({ ok: true, message: "Klaviyo proxy is running on Vercel" });
     }
 
     const results = await Promise.allSettled(
@@ -38,12 +39,13 @@ export default async function handler(req, res) {
             Accept: "application/json",
           },
         });
-        if (!r.ok) throw new Error(`${r.status}`);
-        return r.json();
+        const text = await r.text();
+        if (!r.ok) throw new Error(`${r.status}: ${text.slice(0, 200)}`);
+        return JSON.parse(text);
       })
     );
 
-    return res.json({
+    return res.status(200).json({
       results: results.map((r, i) => ({
         path: requests[i].path,
         status: r.status,
@@ -53,17 +55,15 @@ export default async function handler(req, res) {
     });
   }
 
-  // Single proxy endpoint
+  // GET — single proxy request
   if (req.method === "GET") {
     const apiKey = req.headers["x-klaviyo-key"];
-    if (!apiKey?.startsWith("pk_")) {
-      return res.status(400).json({ error: "Invalid Klaviyo API key in x-klaviyo-key header" });
+    if (!apiKey || !apiKey.startsWith("pk_")) {
+      return res.status(400).json({ error: "Missing x-klaviyo-key header" });
     }
-
     const { path, ...rest } = req.query;
     const qs = new URLSearchParams(rest).toString();
     const url = `https://a.klaviyo.com${path}${qs ? "?" + qs : ""}`;
-
     try {
       const r = await fetch(url, {
         headers: {
