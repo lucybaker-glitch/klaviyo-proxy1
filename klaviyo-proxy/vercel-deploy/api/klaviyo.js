@@ -7,6 +7,17 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  // Helper: build query string preserving page[size] brackets exactly
+  function buildQS(params) {
+    return Object.entries(params)
+      .map(([k, v]) => {
+        // Don't encode brackets in pagination keys — Klaviyo needs them literal
+        const key = k.replace(/\[/g, '%5B').replace(/\]/g, '%5D');
+        return `${key}=${encodeURIComponent(v)}`;
+      })
+      .join('&');
+  }
+
   if (req.method === "POST") {
     let body = req.body;
     if (typeof body === "string") {
@@ -26,16 +37,9 @@ export default async function handler(req, res) {
     }
 
     const results = await Promise.allSettled(
-      requests.map(async ({ path, params = {}, pageSize }) => {
-        // Build query string manually so page[size] is correctly formatted
-        const parts = [];
-        if (pageSize) parts.push(`page[size]=${pageSize}`);
-        Object.entries(params).forEach(([k, v]) => {
-          parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
-        });
-        const qs = parts.join('&');
+      requests.map(async ({ path, params = {} }) => {
+        const qs = buildQS(params);
         const url = `https://a.klaviyo.com${path}${qs ? '?' + qs : ''}`;
-
         const r = await fetch(url, {
           headers: {
             Authorization: `Klaviyo-API-Key ${apiKey}`,
@@ -64,11 +68,8 @@ export default async function handler(req, res) {
     if (!apiKey || !apiKey.startsWith("pk_")) {
       return res.status(400).json({ error: "Missing x-klaviyo-key header" });
     }
-    const { path, pageSize, ...rest } = req.query;
-    const parts = [];
-    if (pageSize) parts.push(`page[size]=${pageSize}`);
-    Object.entries(rest).forEach(([k, v]) => parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`));
-    const qs = parts.join('&');
+    const { path, ...rest } = req.query;
+    const qs = buildQS(rest);
     const url = `https://a.klaviyo.com${path}${qs ? '?' + qs : ''}`;
     try {
       const r = await fetch(url, {
