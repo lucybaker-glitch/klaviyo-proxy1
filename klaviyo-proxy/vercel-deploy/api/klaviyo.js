@@ -21,15 +21,18 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Invalid Klaviyo API key" });
     }
 
-    // Health check — empty requests array
     if (!Array.isArray(requests) || requests.length === 0) {
       return res.status(200).json({ ok: true, message: "Klaviyo proxy is running on Vercel" });
     }
 
     const results = await Promise.allSettled(
       requests.map(async ({ path, params = {} }) => {
-        const qs = new URLSearchParams(params).toString();
-        const url = `https://a.klaviyo.com${path}${qs ? "?" + qs : ""}`;
+        // If params has keys, append as query string - otherwise path may already have query string
+        const hasParams = Object.keys(params).length > 0;
+        const separator = path.includes('?') ? '&' : '?';
+        const qs = hasParams ? new URLSearchParams(params).toString() : '';
+        const url = `https://a.klaviyo.com${path}${qs ? separator + qs : ''}`;
+        
         const r = await fetch(url, {
           headers: {
             Authorization: `Klaviyo-API-Key ${apiKey}`,
