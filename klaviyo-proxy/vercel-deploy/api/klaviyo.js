@@ -26,13 +26,16 @@ export default async function handler(req, res) {
     }
 
     const results = await Promise.allSettled(
-      requests.map(async ({ path, params = {} }) => {
-        // If params has keys, append as query string - otherwise path may already have query string
-        const hasParams = Object.keys(params).length > 0;
-        const separator = path.includes('?') ? '&' : '?';
-        const qs = hasParams ? new URLSearchParams(params).toString() : '';
-        const url = `https://a.klaviyo.com${path}${qs ? separator + qs : ''}`;
-        
+      requests.map(async ({ path, params = {}, pageSize }) => {
+        // Build query string manually so page[size] is correctly formatted
+        const parts = [];
+        if (pageSize) parts.push(`page[size]=${pageSize}`);
+        Object.entries(params).forEach(([k, v]) => {
+          parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+        });
+        const qs = parts.join('&');
+        const url = `https://a.klaviyo.com${path}${qs ? '?' + qs : ''}`;
+
         const r = await fetch(url, {
           headers: {
             Authorization: `Klaviyo-API-Key ${apiKey}`,
@@ -61,9 +64,12 @@ export default async function handler(req, res) {
     if (!apiKey || !apiKey.startsWith("pk_")) {
       return res.status(400).json({ error: "Missing x-klaviyo-key header" });
     }
-    const { path, ...rest } = req.query;
-    const qs = new URLSearchParams(rest).toString();
-    const url = `https://a.klaviyo.com${path}${qs ? "?" + qs : ""}`;
+    const { path, pageSize, ...rest } = req.query;
+    const parts = [];
+    if (pageSize) parts.push(`page[size]=${pageSize}`);
+    Object.entries(rest).forEach(([k, v]) => parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`));
+    const qs = parts.join('&');
+    const url = `https://a.klaviyo.com${path}${qs ? '?' + qs : ''}`;
     try {
       const r = await fetch(url, {
         headers: {
